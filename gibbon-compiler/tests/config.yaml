@@ -311,6 +311,8 @@ tests:
     failing: [gibbon2,gibbon1]
   - name: pp_projs.gib
     failing: [pointer, gibbon1, gibbon2]
+  - name: test27b_subst.gib
+    failing: [gibbon1, gibbon2]
 
   # Tests that actually work but we can't generate answers with Racket
   - name: test08_dict.gib
@@ -322,11 +324,8 @@ tests:
   - name: test08d_sharedict.gib
     failing: [interp1,pointer,gibbon1,gibbon2]
 
-  # This test depends on real symbols, which we don't support atm.
-  - name: test27b_subst.gib
-    failing: [pointer,gibbon2,interp1,gibbon1]
-
-  # No gensym, or real symbols.
+  # [2019.06.16]: Previously this test din't work b/c Gibbon didn't have
+  # gensym. But now it does. FIXME.
   - name: test28_copyprop.gib
     failing: [gibbon2,pointer,interp1,gibbon1]
 

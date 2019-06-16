@@ -392,10 +392,11 @@ desugarAlt toplevel alt =
   case alt of
     Alt _ (PApp _ qname ps) (UnGuardedRhs _ rhs) Nothing -> do
       let conName = qnameToStr qname
-          ps' = map (\x -> case x of
-                             PVar _ v -> (toVar . nameToStr) v
-                             _        -> error "desugarExp: Non-variable pattern in case.")
-                    ps
+      ps' <- mapM (\x -> case x of
+                           PVar _ v    -> (pure . toVar . nameToStr) v
+                           PWildCard _ -> gensym "wildcard_"
+                           _        -> error "desugarExp: Non-variable pattern in case.")
+                   ps
       rhs' <- desugarExp toplevel rhs
       ps'' <- mapM (\v -> (v,) <$> newMetaTy) ps'
       pure (conName, ps'', rhs')
