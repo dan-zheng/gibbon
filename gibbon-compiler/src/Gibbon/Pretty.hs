@@ -35,6 +35,9 @@ class Pretty e where
     pprint :: e -> Doc
     pprint = pprintWithStyle PPInternal
 
+    pprender :: e -> String
+    pprender = render . pprint
+
     {-# MINIMAL pprintWithStyle  #-}
 
 

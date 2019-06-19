@@ -215,7 +215,7 @@ compile config@Config{mode,input,verbosity,backend,cfile} fp0 = do
       dbgPrintLn passChatterLvl $
           " [compiler] pipeline starting, parsed program: "++
             if dbgLvl >= passChatterLvl+1
-            then "\n"++sepline ++ "\n" ++ (render $ pprint l1)
+            then "\n"++sepline ++ "\n" ++ (pprender l1)
             else show (length (sdoc l1)) ++ " characters."
 
       -- (Stage 1) Run the program through the interpreter
@@ -310,13 +310,13 @@ parseInput ip fp = do
   where mono_and_spec :: PassM L0.Prog0 -> IO (PassM L1.Prog1)
         mono_and_spec pm_l0 = let passes = do
                                     l0 <- pm_l0
-                                    dbgTrace 5 ("\n\nParsed:\n" ++ (render $ pprint l0)) (pure ())
+                                    dbgTrace 5 ("\n\nParsed:\n" ++ (pprender l0)) (pure ())
                                     l0 <- freshNames l0
-                                    dbgTrace 5 ("\n\nFreshen:\n" ++ (render $ pprint l0)) (pure ())
+                                    dbgTrace 5 ("\n\nFreshen:\n" ++ (pprender l0)) (pure ())
                                     l0 <- L0.tcProg l0
-                                    dbgTrace 5 ("\n\nTypechecked:\n" ++ (render $ pprint l0)) (pure ())
+                                    dbgTrace 5 ("\n\nTypechecked:\n" ++ (pprender l0)) (pure ())
                                     l1 <- L0.l0ToL1 l0
-                                    dbgTrace 5 ("\n\nLowered to L1:\n" ++ (render $ pprint l1)) (pure ())
+                                    dbgTrace 5 ("\n\nLowered to L1:\n" ++ (pprender l1)) (pure ())
                                     pure l1
                               in pure passes
 
@@ -580,7 +580,7 @@ pass config who fn x = do
         then lift $ evaluate $ force y
         else return y
   if dbgLvl >= passChatterLvl+1
-     then lift$ dbgPrintLn (passChatterLvl+1) $ "Pass output:\n"++sepline++"\n"++ (render $ pprint y')
+     then lift$ dbgPrintLn (passChatterLvl+1) $ "Pass output:\n"++sepline++"\n"++ (pprender y')
      -- TODO: Switch to a node-count for size output (add to GenericOps):
      else lift$ dbgPrintLn passChatterLvl $ "   => "++ show (length (sdoc y')) ++ " characters output."
   return y'

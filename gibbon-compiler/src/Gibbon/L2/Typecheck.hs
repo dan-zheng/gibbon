@@ -29,6 +29,7 @@ import           Text.PrettyPrint.GenericPretty
 import           Debug.Trace
 
 import           Gibbon.Common
+import           Gibbon.Pretty
 import           Gibbon.L2.Syntax as L2
 -- import qualified Gibbon.L1.Syntax as L1
 
@@ -102,12 +103,12 @@ data TCError = GenericTC String Exp
                deriving (Read,Eq,Ord,Generic,NFData)
 
 instance Show TCError where
-    show (GenericTC str e) = "Error typechecking L2 Program\nIn the expression:\n" ++ (sdoc e) ++ "\n" ++ str ++ "\n"
-    show (VarNotFoundTC v e) = "Variable not found: " ++ (show v) ++ "\nIn the expression:\n" ++ (sdoc e) ++ "\n"
-    show (UnsupportedExpTC e) = "Unsupported expression:\n" ++ (sdoc e) ++ "\n"
-    show (LocationTC str e lv1 lv2) = "Location typechecking error: " ++ str ++ "\nIn the expression:\n" ++ (sdoc e)
+    show (GenericTC str e) = "Error typechecking L2 Program\nIn the expression:\n" ++ (pprender e) ++ "\n" ++ str ++ "\n"
+    show (VarNotFoundTC v e) = "Variable not found: " ++ (show v) ++ "\nIn the expression:\n" ++ (pprender e) ++ "\n"
+    show (UnsupportedExpTC e) = "Unsupported expression:\n" ++ (pprender e) ++ "\n"
+    show (LocationTC str e lv1 lv2) = "Location typechecking error: " ++ str ++ "\nIn the expression:\n" ++ (pprender e)
                                       ++ "\nLocations: " ++ (show lv1) ++ ", " ++ (show lv2) ++ "\n"
-    show (ModalityTC str e lv lts) = "Modality typechecking error: " ++ str ++ "\nIn the expression:\n" ++ (sdoc e)
+    show (ModalityTC str e lv lts) = "Modality typechecking error: " ++ str ++ "\nIn the expression:\n" ++ (pprender e)
                                      ++ "\nLocation: " ++ (show lv) ++ "\nLocation type state: " ++ (show lts) ++ "\n"
 
 -- | The type checking monad. Just for throwing errors, but could in the future be parameterized
@@ -301,15 +302,15 @@ tcExp ddfs env funs constrs regs tstatein exp@(L _ ex) =
                  PEndOf -> return (CursorTy, tstate)
 
 
-      LetE (v,_ls,ty,e1) e2 -> do
-
+      LetE (v,ls,ty,e1) e2 -> do
+               let tstate1 = foldr (\loc acc -> extendTS loc (Output, False) acc) tstatein ls
                -- We get the type and new location state from e1
-               (ty1,tstate1) <- recur tstatein e1
+               (ty1,tstate2) <- recur tstate1 e1
                ensureEqualTyNoLoc exp ty1 ty
                let env' = extendVEnv v ty env
 
                -- Then we check e1 with that location state
-               tcExp ddfs env' funs constrs regs tstate1 e2
+               tcExp ddfs env' funs constrs regs tstate2 e2
 
       IfE e1 e2 e3 -> do
 
@@ -405,7 +406,8 @@ tcExp ddfs env funs constrs regs tstatein exp@(L _ ex) =
                           return (ty,tstate3)
 
                  AfterConstantLE i l1 -> do
-
+                          -- Check if l1 is bound
+                          _ <- lookupTS exp l1 tstatein
                           r <- getRegion exp constrs l1
                           let tstate1 = extendTS v (Output,True) $ setAfter l1 tstatein
                           let constrs1 = extendConstrs (InRegionC v r) $
@@ -414,8 +416,10 @@ tcExp ddfs env funs constrs regs tstatein exp@(L _ ex) =
                           tstate3 <- removeLoc exp tstate2 v
                           return (ty,tstate3)
 
-                 AfterVariableLE x l1 -> do
 
+                 AfterVariableLE x l1 -> do
+                          -- Check if l1 is bound
+                          _ <- lookupTS exp l1 tstatein
                           r <- getRegion exp constrs l1
                           (_xty,tstate1) <- tcExp ddfs env funs constrs regs tstatein $ L NoLoc $ VarE x
                           -- NOTE: We now allow aliases (offsets) from scalar vars too. So we can leave out this check
@@ -427,7 +431,9 @@ tcExp ddfs env funs constrs regs tstatein exp@(L _ ex) =
                           tstate4 <- removeLoc exp tstate3 v
                           return (ty,tstate4)
 
-                 FromEndLE _l1 -> do
+                 FromEndLE l1 -> do
+                   -- Check if l1 is bound
+                   _ <- lookupTS exp l1 tstatein
                    -- TODO: This is the bare minimum which gets the examples typechecking again.
                    -- Need to figure out if we need to check more things here
                    (ty,tstate1) <- tcExp ddfs env funs constrs regs tstatein e
@@ -478,14 +484,13 @@ tcCases ddfs env funs constrs regs tstatein lin reg ((dc, vs, e):cases) = do
         (lin, (InRegionC l1 reg : lst))
 
       -- Generate the new location state map to check this branch
-      genTS ((_v,l),PackedTy _ _) ts = extendTS l (Input,False) ts
-      genTS _ ts = ts
+      genTS ((_v,l),_) ts = extendTS l (Input,False) ts
+
       genEnv ((v,l),PackedTy dc _l') env = extendVEnv v (PackedTy dc l) env
       genEnv ((v,_l),ty) env = extendVEnv v ty env
 
       -- Remove the pattern-bound location variables from the location state map
-      remTS ((_v,l),PackedTy _ _) ts = removeTS l ts
-      remTS _ ts = ts
+      remTS ((_v,l),_) ts = removeTS l ts
 
       -- Use these functions with our old friend foldr
       constrs1 = L.foldr extendConstrs constrs $ snd $ L.foldr genConstrs (lin,[]) pairwise
@@ -758,8 +763,8 @@ removeTS l (LocationTypeState ls) = LocationTypeState $ M.delete l ls
 setAfter :: LocVar -> LocationTypeState -> LocationTypeState
 setAfter l (LocationTypeState ls) = LocationTypeState $ M.adjust (\(m,_) -> (m,True)) l ls
 
-_lookupTS :: Exp -> LocVar -> LocationTypeState -> TcM (Modality,Bool)
-_lookupTS exp l (LocationTypeState ls) =
+lookupTS :: Exp -> LocVar -> LocationTypeState -> TcM (Modality,Bool)
+lookupTS exp l (LocationTypeState ls) =
     case M.lookup l ls of
       Nothing -> throwError $ GenericTC ("Failed lookup of location " ++ (show l)) exp
       Just d -> return d
