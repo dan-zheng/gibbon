@@ -11,7 +11,7 @@
 module Gibbon.L1.Syntax
     (
       -- * Core types specific to L1
-      Prog1, FunDef1, FunDefs1, DDef1, DDefs1, Exp1, Ty1, NoExt
+      Prog1, FunDef1, FunDefs1, DDef1, DDefs1, Exp1, Ty1, E1Ext(..)
 
     , module Gibbon.Language
     ) where
@@ -23,6 +23,7 @@ import GHC.Generics
 import Text.PrettyPrint.GenericPretty
 
 import Gibbon.Language
+import Gibbon.Common
 
 --------------------------------------------------------------------------------
 
@@ -33,7 +34,7 @@ instance FunctionTy Ty1 where
   outTy = snd
 
 -- | A convenient, default instantiation of the L1 expression type.
-type Exp1 = PreExp NoExt () Ty1
+type Exp1 = PreExp E1Ext () Ty1
 
 -- | An L1 program.
 type Prog1 = Prog (L Exp1)
@@ -53,48 +54,36 @@ type Ty1 = UrTy ()
 
 --------------------------------------------------------------------------------
 
--- | An uninhabidited type indicating that the base grammar is not extended with any
--- additional constructs.
-data NoExt l d   deriving (Generic, NFData)
+-- ^ [2019.06.16] HACK: Ideally we should only deal with location
+-- arithmetic in L2. However we need this in L1 to calculate certain
+-- random-access-nodes. InferLocations turns this into an appropriate
+-- L2 extension. See 'mkRANs' in 'AddRAN' for an example.
+--
+-- Invariant: This should only appear as an RHS in a let binding.
+data E1Ext l d = AddCursor Var Int
+  deriving (Show, Ord, Eq, Read, Generic, Out, NFData)
 
-instance Show (NoExt l d) where
-  show _ = error "<NoExt: This should be impossible to print>"
-instance Out (NoExt l d) where
-  doc _ = error "<NoExt: This should be impossible to print>"
-  docPrec _ x = doc x
-instance Read (NoExt l d) where
-  readsPrec _ = error "<NoExt: This should be impossible to read>"
-instance Eq (NoExt l d) where
-  _ == _ = True
-instance Ord (NoExt l d) where
-  compare _ _ = EQ
-instance FreeVars (NoExt l d) where
-  gFreeVars _ = S.empty
+instance FreeVars (E1Ext l d) where
+  gFreeVars (AddCursor v _) = S.singleton v
 
--- | A dummy instance for "no-extension" extension point.
-instance Expression (NoExt l d) where
-  type TyOf  (NoExt l d) = d
-  type LocOf (NoExt l d) = l
-  isTrivial _ = True
+instance Expression (E1Ext l d) where
+  type TyOf  (E1Ext l d) = UrTy l
+  type LocOf (E1Ext l d) = l
+  isTrivial _ = False
 
--- | A dummy instance for "no-extension" extension point.
-instance Flattenable (NoExt l d) where
-  gFlattenExp _ _ impossible = return impossible
-  gFlattenGatherBinds  _ _ impossible = return ([],impossible)
+instance Flattenable (E1Ext l d) where
+  gFlattenGatherBinds  _ _ e = return ([],e)
+  gFlattenExp _ _ e          = return e
 
--- | A dummy instance for "no-extension" extension point.
-instance HasSimplifiableExt NoExt l d => SimplifiableExt (L (PreExp NoExt l d)) (NoExt l d) where
-  gInlineTrivExt _ impossible = impossible
+instance HasSimplifiableExt E1Ext l d => SimplifiableExt (L (PreExp E1Ext l d)) (E1Ext l d) where
+  gInlineTrivExt _ e = e
 
--- | A dummy instance for "no-extension" extension point.
-instance HasSubstitutableExt NoExt l d => SubstitutableExt (L (PreExp NoExt l d)) (NoExt l d) where
-  gSubstExt _ _ impossible  = impossible
-  gSubstEExt _ _ impossible = impossible
+instance HasSubstitutableExt E1Ext l d => SubstitutableExt (L (PreExp E1Ext l d)) (E1Ext l d) where
+  gSubstExt _ _ e  = e
+  gSubstEExt _ _ e = e
 
--- | A dummy instance for "no-extension" extension point.
-instance Typeable (NoExt l d) where
-  gRecoverType _ _ _ = error "<NoExt: It should be impossible to recover type of this>"
+instance Typeable (E1Ext l d) where
+  gRecoverType _ _ _ = CursorTy
 
--- | A dummy instance for "no-extension" extension point.
-instance Renamable (NoExt l d) where
-  gRename _ impossible = impossible
+instance Renamable (E1Ext l d) where
+  gRename env (AddCursor v i) = (AddCursor (gRename env v) i)

@@ -839,9 +839,9 @@ inferExp env@FullEnv{dataDefs}
                      , ty', fcs)
 
         -- Don't process the EndOf operation at all, just recur through it
-        PrimAppE PEndOf [L la (VarE v)] -> do
+        PrimAppE RequestEndOf [L la (VarE v)] -> do
           (bod',ty',cs') <- inferExp (extendVEnv vr CursorTy env) bod dest
-          return (lc$ L2.LetE (vr,[],CursorTy,L sl2 $ L2.PrimAppE PEndOf [L la (L2.VarE v)]) bod', ty', cs')
+          return (lc$ L2.LetE (vr,[],CursorTy,L sl2 $ L2.PrimAppE RequestEndOf [L la (L2.VarE v)]) bod', ty', cs')
 
         PrimAppE (DictInsertP dty) ls -> do
           (e,ty,cs) <- inferExp env (L sl2 $ PrimAppE (DictInsertP dty) ls) NoDest
@@ -966,12 +966,15 @@ inferExp env@FullEnv{dataDefs}
 
         MapE{} -> err$ "MapE unsupported"
         FoldE{} -> err$ "FoldE unsupported"
-        Ext{} -> err$ "Not expecting any Ext in inferLocs"
+
+        Ext (AddCursor cur i) -> do
+          (bod',ty',cs') <- inferExp env bod dest
+          tryBindReg (lc$ Ext $ LetLocE vr (AfterConstantLE i cur) bod', ty', cs')
 
     LetE{} -> err$ "Malformed let expression: " ++ (show ex0)
     MapE{} -> err$ "MapE unsupported"
     FoldE{} -> err$ "FoldE unsupported"
-    Ext{} -> err$ "Not expecting any Ext in inferLocs"
+    Ext{} -> err$ "Not expecting an Ext here: " ++ sdoc ex0
 
 
 -- TODO: Should eventually allow src and dest regions to be the same
@@ -1442,8 +1445,8 @@ prim p = case p of
            MkFalse -> return MkFalse
            Gensym  -> return Gensym
            SizeParam -> return SizeParam
-           PEndOf    -> return PEndOf
-           DictEmptyP dty -> convertTy dty >>= return . DictEmptyP
+           RequestEndOf    -> return RequestEndOf
+           DictEmptyP dty  -> convertTy dty >>= return . DictEmptyP
            DictInsertP dty -> convertTy dty >>= return . DictInsertP
            DictLookupP dty -> convertTy dty >>= return . DictLookupP
            DictHasKeyP dty -> convertTy dty >>= return . DictHasKeyP

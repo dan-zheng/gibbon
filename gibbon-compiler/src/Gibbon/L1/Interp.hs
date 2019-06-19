@@ -75,7 +75,7 @@ interp rc _ddefs fenv = go M.empty
     go :: ValEnv -> L (PreExp e l (UrTy l)) -> WriterT Log (StateT Store IO) Value
     go env (L _ x0) =
         case x0 of
-          Ext{} -> error "Cannot interpret NoExt"
+          Ext{} -> error "Cannot interpret E1Ext"
 
           LitE c    -> return $ VInt c
           LitSymE s -> return $ VSym (fromVar s)

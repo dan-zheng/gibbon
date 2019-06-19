@@ -194,7 +194,13 @@ tcExp ddfs env exp@(L p ex) =
           len0
           return ty
 
-        PEndOf -> return CursorTy
+        RequestEndOf -> do
+          len1
+          case (es !! 0) of
+            L _ VarE{} -> if isPackedTy (tys !! 0)
+                          then return CursorTy
+                          else throwError $ GenericTC "Expected PackedTy" exp
+            _ -> throwError $ GenericTC "Expected a variable argument" exp
 
 
     LetE (v,[],SymDictTy _ pty, rhs) e -> do
@@ -287,7 +293,14 @@ tcExp ddfs env exp@(L p ex) =
       let env' = extendEnv env [(v,ArenaTy)]
       tcExp ddfs env' e
 
-    Ext{} -> error $ "L1.Typecheck: Unexpected " ++ sdoc ex
+    Ext ext ->
+      case ext of
+        AddCursor cur _ -> do
+          case M.lookup cur (vEnv env) of
+            Just CursorTy -> return CursorTy
+            Just _        -> throwError $ GenericTC "Expected CursorTy" (l$ VarE cur)
+            _             -> throwError $ GenericTC "Unbound Cursor" (l$ VarE cur)
+
     MapE{} -> error $ "L1.Typecheck: TODO: " ++ sdoc ex
     FoldE{} -> error $ "L1.Typecheck: TODO: " ++ sdoc ex
 
@@ -387,8 +400,8 @@ tcProj e _i ty = throwError $ GenericTC ("Projection from non-tuple type " ++ (s
 
 
 tcCases :: DDefs (UrTy ()) -> Env2 (UrTy ()) ->
-           [(DataCon, [(Var, ())], L (PreExp NoExt () (UrTy ())))] ->
-           TcM (UrTy ()) (L (PreExp NoExt () (UrTy ())))
+           [(DataCon, [(Var, ())], L (PreExp E1Ext () (UrTy ())))] ->
+           TcM (UrTy ()) (L (PreExp E1Ext () (UrTy ())))
 tcCases ddfs env cs = do
   tys <- forM cs $ \(c,args',rhs) -> do
            let args  = L.map fst args'

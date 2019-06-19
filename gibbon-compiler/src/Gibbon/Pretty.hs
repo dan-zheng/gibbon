@@ -13,7 +13,7 @@ import           Text.PrettyPrint.GenericPretty
 import qualified Data.Map as M
 
 import qualified Gibbon.L0.Syntax as L0
-import           Gibbon.L1.Syntax
+import           Gibbon.L1.Syntax as L1
 import           Gibbon.L2.Syntax as L2
 import           Gibbon.L3.Syntax as L3
 import           Gibbon.Common
@@ -143,10 +143,7 @@ instance Pretty ex => Pretty (DDef ex) where
 -- Primitives
 instance (Pretty d, Ord d) => Pretty (Prim d) where
     pprintWithStyle sty pr =
-        -- We add PEndOf here because it's not exposed to the users, and as a result,
-        -- is not defined as a primop in the parser primMap.
-        let renderPrim = M.union (M.singleton PEndOf "pendof") $
-                         M.fromList (map (\(a,b) -> (b,a)) (M.toList primMap))
+        let renderPrim = M.fromList (map (\(a,b) -> (b,a)) (M.toList primMap))
         in case M.lookup pr renderPrim of
               Nothing  ->
                   let wty ty = text "<" <> pprintWithStyle sty ty <> text ">"
@@ -156,6 +153,7 @@ instance (Pretty d, Ord d) => Pretty (Prim d) where
                       DictHasKeyP ty -> text "DictHasKey" <> wty ty
                       DictInsertP ty -> text "DictInsert" <> wty ty
                       DictLookupP ty -> text "DictLookup" <> wty ty
+                      RequestEndOf   -> text "RequestEndOf"
                       _ -> error $ "pprint: Unknown primitive"
               Just str -> text str
 
@@ -191,7 +189,7 @@ instance (Pretty l) => Pretty (UrTy l) where
           PackedTy tc loc ->
               case sty of
                 PPHaskell  -> text tc
-                PPInternal -> text "Packed" <+> text tc <+> pprintWithStyle sty loc
+                PPInternal -> parens $ text "Packed" <+> text tc <+> pprintWithStyle sty loc
           ListTy ty1 -> brackets $ pprintWithStyle sty ty1
           PtrTy     -> text "Ptr"
           CursorTy  -> text "Cursor"
@@ -296,8 +294,10 @@ instance HasPrettyToo e l d => Pretty (PreExp e l d) where
                                                             vls))
                                <+> text "->" $+$ nest indentLevel (pprintWithStyle sty e)
 -- L1
-instance Pretty (NoExt l d) where
-    pprintWithStyle _ _ = empty
+instance Pretty (E1Ext l d) where
+    pprintWithStyle sty (L1.AddCursor v i) =
+      text "AddCursorP" <+> pprintWithStyle sty v <+>
+      text "+" <+> int i
 
 -- L2
 instance Pretty l => Pretty (L2.PreLocExp l) where
