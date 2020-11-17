@@ -911,7 +911,7 @@ typecheckA_par :: A -> A
 typecheckA_par prg =
   case prg of
     ProgramA expected exp ->
-      let actual = typecheckExpA_par empty_env exp
+      let actual = typecheckExpA_par 0 empty_env exp
       in if eqTy expected actual
          -- COPY: exp is copied (indirection)
          then ProgramA expected exp
@@ -941,24 +941,28 @@ typecheckExpA ty_env exp =
               else errorTy
          else errorTy
 
-typecheckExpA_par :: TypeEnv -> ExpA -> Ty
-typecheckExpA_par ty_env exp =
+typecheckExpA_par :: Int -> TypeEnv -> ExpA -> Ty
+typecheckExpA_par depth ty_env exp =
+  -- if depth > 8 then typecheckExpA ty_env exp else
   case exp of
     SimplA simpl -> typecheckSimplExpA ty_env simpl
     LetA v rhs bod ->
       let ty = typecheckSimplExpA ty_env rhs
           ty_env' = insert_env ty_env v ty
-      in typecheckExpA_par ty_env' bod
+      in typecheckExpA_par (depth+1) ty_env' bod
     -- Bottom out to sequential.
-    LetA2 v rhs bod -> typecheckExpA ty_env exp
+    LetA2 v rhs bod ->
+      let ty = typecheckSimplExpA ty_env rhs
+          ty_env' = insert_env ty_env v ty
+      in typecheckExpA ty_env' bod
     IfA a b c ->
       let t1 = typecheckSimplExpA ty_env a
           -- TODO:
           -- (ty_env1, ty_env2) = fork_pdict ty_env
           ty_env1 = ty_env
           ty_env2 = ty_env
-          t2 = spawn (typecheckExpA_par ty_env1 b)
-          t3 = typecheckExpA_par ty_env2 c
+          t2 = spawn (typecheckExpA_par (depth+1) ty_env1 b)
+          t3 = typecheckExpA_par (depth+1) ty_env2 c
           _ = sync
       in if eqTy t1 boolTy
          then if eqTy t2 t3
@@ -993,6 +997,47 @@ typecheckSimplExpA ty_env exp =
           te1 = typecheckArg ty_env e1
           te2 = typecheckArg ty_env e2
       in typecheckCmp c te1 te2
+
+--------------------------------------------------------------------------------
+-- Constant folding
+
+-- foldConstants :: R -> R
+-- foldConstants prg =
+--   case prg of
+--     ProgramR ty exp -> ProgramR ty (fcExp empty_env exp)
+--     ErrorR err -> ErrorR err
+
+-- fcExpA :: ExpA -> ExpA
+-- fcExpA exp =
+--   case exp of
+--     SimplA simpl -> SimplA (uniqifySimplExpA simpl)
+--     LetA v rhs bod ->
+--       let rhs' = fcSimplExpA rhs
+--           bod' = fcExpA var_env' bod
+--       in LetA v rhs' bod'
+--     LetA2 v rhs bod ->
+--       let rhs' = fcSimplExpA rhs
+--           bod' = fcExpA var_env' bod
+--       in LetA2 v rhs' bod'
+--     IfA a b c -> IfA (fcSimplExpA a) (fcExpA b) (fcExpA c)
+
+-- fcSimplExpA :: SimplExpA -> SimplExpA
+-- fcSimplExpA exp =
+--   case exp of
+--     ArgA arg -> ArgA (copy_arg arg)
+--     ReadA -> ReadA
+--     NegA e -> NegA (copy_arg e)
+--     NotA e -> NotA (copy_arg e)
+--     -- PrimA p e1 e2 ->
+--     --     case e1 of
+--     --         ArgA a ->
+--     --             case a of
+--     --                 IntArg i ->
+--     --                     case e2 of
+--     --                         ArgA b ->
+--     --                             case b of
+--     --                                 IntArg j ->
+--     CmpA c e1 e2  -> CmpA (copy_cmp c) (uniqifyArg e1) (uniqifyArg e2)
 
 --------------------------------------------------------------------------------
 -- Uniqify
@@ -1043,6 +1088,12 @@ uniqifyA :: A -> A
 uniqifyA prg =
   case prg of
     ProgramA ty exp -> ProgramA ty (uniqifyExpA empty_env exp)
+    ErrorA err -> ErrorA err
+
+uniqifyA_par :: A -> A
+uniqifyA_par prg =
+  case prg of
+    ProgramA ty exp -> ProgramA ty (uniqifyExpA_par empty_env exp)
     ErrorA err -> ErrorA err
 
 uniqifyExpA :: VarEnv -> ExpA -> ExpA
@@ -1100,19 +1151,19 @@ uniqifyExpA_par var_env exp =
         let rhs' = uniqifySimplExpA var_env rhs
             v'   = gensym
             var_env' = insert_env var_env v v'
-            bod' = uniqifyExpA_par var_env' bod
+            bod' = uniqifyExpA var_env' bod
         in LetA2 v' rhs' bod'
       else
         let rhs' = uniqifySimplExpA var_env rhs
             var_env' = insert_env var_env v v
-            bod' = uniqifyExpA_par var_env bod
+            bod' = uniqifyExpA var_env bod
         in LetA2 v rhs' bod'
     IfA a b c ->
       let a' = (uniqifySimplExpA var_env a)
           -- TODO:
           -- (var_env1, var_env2) = fork_pdict var_env
-          var_env1 = var_env
-          var_env2 = var_env
+          -- var_env1 = var_env
+          -- var_env2 = var_env
           b' = spawn (uniqifyExpA_par var_env b)
           c' = (uniqifyExpA_par var_env c)
           _ = sync
@@ -1145,6 +1196,22 @@ explicateControl prg =
                  -- TRAVERSAL: forcing random access here triggers a InferLocations bug.
                  blk2 = BlockCons start tail' blk0
              in ProgramC ty locals blk2
+
+
+explicateControl_par :: A -> C
+explicateControl_par prg =
+  case prg of
+    ProgramA ty exp ->
+      let (locals, exp') = explicateTail_par exp
+      in case exp' of
+           MkTailAndBlk tail blk0 ->
+             let start = gensym
+                 -- COPY: tail and blk0 are copied (indirection)
+                 tail' = _copy_tail tail
+                 -- TRAVERSAL: forcing random access here triggers a InferLocations bug.
+                 blk2 = BlockCons start tail' blk0
+             in ProgramC ty locals blk2
+
 
 explicateTail :: ExpA -> (List Sym, TailAndBlk)
 explicateTail exp =
@@ -1394,6 +1461,15 @@ selectInstrs prg =
       ProgramX86 ty locals (selectInstrsBlk blk)
     ErrorC err -> ErrorX86 err
 
+
+selectInstrs_par :: C -> PseudoX86
+selectInstrs_par prg =
+  case prg of
+    ProgramC ty locals blk ->
+      ProgramX86 ty locals (selectInstrsBlk_par blk)
+    ErrorC err -> ErrorX86 err
+
+
 selectInstrsBlk :: BlkC -> Instrs
 selectInstrsBlk blk =
   case blk of
@@ -1421,9 +1497,9 @@ selectInstrsBlk_par blk =
       -- -- TRAVERSAL: tail is traversed (random access)
       -- selectInstrsTail2 tail rst
 
-      -- better for block level parallelism
+      -- can parallelize this too. but a single block might not have enough work in it...
       let instrs1 = spawn (selectInstrsTail tail)
-          instrs2 = selectInstrsBlk_par rst
+          instrs2 = selectInstrsBlk rst
           _ = sync
       in InstrAppend instrs1 instrs2
 
@@ -1814,6 +1890,17 @@ assignHomes prg =
           em = alloc_ll
       in ProgramX86 ty em (assignHomesInstrs homes instrs)
 
+assignHomes_par :: PseudoX86 -> PseudoX86
+assignHomes_par prg =
+  case prg of
+    ProgramX86 ty locals instrs ->
+      let homes = makeHomes locals
+          -- homes :: HomesEnv
+          -- homes = empty_int_env
+          em :: List Sym
+          em = alloc_ll
+      in ProgramX86 ty em (assignHomesInstrs_par homes instrs)
+
 assignHomesInstrs :: HomesEnv -> Instrs -> Instrs
 assignHomesInstrs homes instrs =
   case instrs of
@@ -1875,11 +1962,24 @@ compile0 p0 =
       p2 = uniqifyA p1
   in p2
 
+compile0_par :: A -> A
+compile0_par p0 =
+  let p1 = typecheckA_par p0
+      p2 = uniqifyA_par p1
+  in p2
+
 compile1 :: A -> C
 compile1 p0 =
   let p1 = typecheckA p0
       p2 = uniqifyA p1
       p3 = explicateControl p2
+  in p3
+
+compile1_par :: A -> C
+compile1_par p0 =
+  let p1 = typecheckA_par p0
+      p2 = uniqifyA_par p1
+      p3 = explicateControl_par p2
   in p3
 
 compile2 :: A -> PseudoX86
@@ -1895,35 +1995,35 @@ compile2 p0 =
 compile2_par :: A -> PseudoX86
 compile2_par p0 =
   let p1 = typecheckA_par p0
-      p2 = uniqifyA p1
-      p3 = explicateControl p2
+      p2 = uniqifyA_par p1
+      p3 = explicateControl_par p2
       -- p4 = optimizeJumps p3
-      p5 = selectInstrs p3
-      p6 = assignHomes p5
+      p5 = selectInstrs_par p3
+      p6 = assignHomes_par p5
   in p6
 
-compile3 :: A -> PseudoX86
-compile3 p0 =
-  let p1 = typecheckA p0
-      _ = print_program_a p1
-      _ = print_newline()
-      _ = print_newline()
-      p2 = uniqifyA p1
-      _ = print_program_a p2
-      _ = print_newline()
-      _ = print_newline()
-      p3 = explicateControl p2
-      _ = print_program_c p3
-      _ = print_newline()
-      _ = print_newline()
-      -- p4 = optimizeJumps p3
-      -- _ = print_program_c p4
-      -- _ = print_newline()
-      p5 = selectInstrs p3
-      _ = print_pseudox86 p5
-      p6 = assignHomes p5
-      _ = print_pseudox86 p6
-  in p6
+-- compile3 :: A -> PseudoX86
+-- compile3 p0 =
+--   let p1 = typecheckA p0
+--       _ = print_program_a p1
+--       _ = print_newline()
+--       _ = print_newline()
+--       p2 = uniqifyA p1
+--       _ = print_program_a p2
+--       _ = print_newline()
+--       _ = print_newline()
+--       p3 = explicateControl p2
+--       _ = print_program_c p3
+--       _ = print_newline()
+--       _ = print_newline()
+--       -- p4 = optimizeJumps p3
+--       -- _ = print_program_c p4
+--       -- _ = print_newline()
+--       p5 = selectInstrs p3
+--       _ = print_pseudox86 p5
+--       p6 = assignHomes p5
+--       _ = print_pseudox86 p6
+--   in p6
 
 --------------------------------------------------------------------------------
 
@@ -1938,7 +2038,7 @@ make_big_ex2 n =
 
 make_big_ex :: Int -> Int -> ExpA
 make_big_ex n d =
-  if d > 2
+  if d > 10
   then make_big_ex2 n
   else
     -- let v1 = gensym
@@ -1947,19 +2047,31 @@ make_big_ex n d =
        (IfA (CmpA EqP (VarArg v1) (IntArg 0))
          (make_big_ex n (d+1))
          (make_big_ex n (d+1)))
+{-
+
+small_ex :: A
+small_ex = ProgramA intTy
+          (LetA (quote "v0") (ArgA (IntArg 20))
+           (LetA (quote "v1") (ArgA (IntArg 22))
+            (LetA (quote "res") (PrimA AddP (VarArg (quote "v0")) (VarArg (quote "v1")))
+             (IfA
+              (CmpA EqP (VarArg (quote "v0")) (VarArg (quote "v1")))
+              (SimplA (ArgA (VarArg (quote "v0"))))
+              (SimplA (ArgA (VarArg (quote "v1"))))))))
+
+-}
 
 gibbon_main =
-  let -- p = ProgramA intTy
-      --     (LetA (quote "v0") (ArgA (IntArg 20))
-      --      (LetA (quote "v1") (ArgA (IntArg 22))
-      --       (LetA (quote "res") (PrimA AddP (VarArg (quote "v0")) (VarArg (quote "v1")))
-      --        (IfA
-      --         (CmpA EqP (VarArg (quote "v0")) (VarArg (quote "v1")))
-      --         (SimplA (ArgA (VarArg (quote "v0"))))
-      --         (SimplA (ArgA (VarArg (quote "v1"))))))))
-      ex = make_big_ex sizeParam 0
+  let ex = make_big_ex sizeParam 0
       -- _ = print_expa ex
       p = ProgramA intTy ex
-      compiled = iterate (compile2 p)
-      -- compiled_par = iterate (compile2_par p)
+      -- _ = iterate (typecheckA p)
+      -- _ = printsym (quote "\n")
+      -- _ = iterate (typecheckA_par p)
+      -- _ = iterate (uniqify p)
+      -- _ = printsym (quote "\n")
+      -- _ = iterate (uniqify_par p)
+      -- compiled = iterate (compile2 p)
+      -- -- _ = printsym (quote "\n")
+      compiled_par = iterate (compile2_par p)
   in ()

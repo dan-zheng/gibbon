@@ -31,7 +31,7 @@
 #define GB (MB * 1000lu)
 
 // Initial size of BigInfinite buffers
-static long long global_init_biginf_buf_size = (4 * GB);
+static long long global_init_biginf_buf_size = (5 * GB);
 
 // Initial size of Infinite buffers
 static long long global_init_inf_buf_size = 64 * KB;
@@ -63,12 +63,12 @@ static const int num_workers = 1;
 // -------------------------------------
 
 
-#ifdef _BUMPALLOC
+// #ifdef _BUMPALLOC
 // #define DEBUG
 #warning "Using bump allocator."
 
-char* heap_ptr = (char*)NULL;
-char* heap_ptr_end = (char*)NULL;
+__thread char* heap_ptr = (char*)NULL;
+__thread char* heap_ptr_end = (char*)NULL;
 
 char* saved_heap_ptr_stack[100];
 int num_saved_heap_ptr = 0;
@@ -101,6 +101,7 @@ void INITALLOC() {
     // #else
       heap_ptr = (char*)malloc(global_init_biginf_buf_size);
       heap_ptr_end = heap_ptr + global_init_biginf_buf_size;
+      // printf("Allocating memory...\n");
     // #endif
     dbgprintf("Arena size for bump alloc: %lld\n", global_init_biginf_buf_size);
   }
@@ -108,6 +109,7 @@ void INITALLOC() {
 }
 
 void* BUMPALLOC(int n) {
+      INITALLOC();
       if (heap_ptr + n < heap_ptr_end) {
           char* old= heap_ptr;
           heap_ptr += n;
@@ -138,15 +140,15 @@ void restore_alloc_state() {
 }
 
 
-#else
-// Regular malloc mode:
-void INITALLOC() {}
-void save_alloc_state() {}
-void restore_alloc_state() {}
+// #else
+// // Regular malloc mode:
+// void INITALLOC() {}
+// void save_alloc_state() {}
+// void restore_alloc_state() {}
 
-#define BUMPALLOC(n) malloc(n)
+// #define BUMPALLOC(n) malloc(n)
 
-#endif // BUMPALLOC
+// #endif // BUMPALLOC
 
 
 #ifdef _PARALLEL
@@ -506,9 +508,9 @@ IntTy print_symbol(SymTy idx) {
 }
 
 SymTy gensym() {
-    // SymTy idx = __atomic_add_fetch(&global_gensym_counter, 1, __ATOMIC_SEQ_CST);
-    global_gensym_counter += 1;
-    SymTy idx = global_gensym_counter;
+    SymTy idx = __atomic_add_fetch(&global_gensym_counter, 1, __ATOMIC_SEQ_CST);
+    // global_gensym_counter += 1;
+    // SymTy idx = global_gensym_counter;
     // char value[global_max_symbol_len];
     // sprintf(value, "gensym_%lld",idx);
     // add_symbol(idx, value);
@@ -516,18 +518,19 @@ SymTy gensym() {
 }
 
 // CSK: This is terrible, symbol equality should just be ==.
-BoolTy eqsym(SymTy s1, SymTy s2) {
-    if (s1 == s2) {
-        return true;
-    }
-    struct SymTable_elem *se1;
-    HASH_FIND(hh, global_sym_table, &s1, sizeof(SymTy), se1);
-    struct SymTable_elem *se2;
-    HASH_FIND(hh, global_sym_table, &s2, sizeof(SymTy), se2);
-    if (se1 == NULL || se2 == NULL) {
-        return false;
-    }
-    return (strcmp (se1->value, se2->value) == 0);
+static inline BoolTy eqsym(SymTy s1, SymTy s2) {
+    return s1 == s2;
+    // if (s1 == s2) {
+    //     return true;
+    // }
+    // struct SymTable_elem *se1;
+    // HASH_FIND(hh, global_sym_table, &s1, sizeof(SymTy), se1);
+    // struct SymTable_elem *se2;
+    // HASH_FIND(hh, global_sym_table, &s2, sizeof(SymTy), se2);
+    // if (se1 == NULL || se2 == NULL) {
+    //     return false;
+    // }
+    // return (strcmp (se1->value, se2->value) == 0);
 }
 
 void free_symtable() {
@@ -1216,7 +1219,7 @@ int main(int argc, char** argv)
         }
     }
 
-    INITALLOC();
+    // INITALLOC();
 // #ifdef BUMPALLOC
     //    save_alloc_state();
 // #endif
