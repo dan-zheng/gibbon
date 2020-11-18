@@ -1499,7 +1499,7 @@ selectInstrsBlk_par blk =
 
       -- can parallelize this too. but a single block might not have enough work in it...
       let instrs1 = spawn (selectInstrsTail tail)
-          instrs2 = selectInstrsBlk rst
+          instrs2 = selectInstrsBlk_par rst
           _ = sync
       in InstrAppend instrs1 instrs2
 
@@ -2038,7 +2038,10 @@ make_big_ex2 n =
 
 make_big_ex :: Int -> Int -> ExpA
 make_big_ex n d =
-  if d > 10
+  -- SMALL
+  if d > 6
+  -- -- OTHERWISE
+  -- if d > 10
   then make_big_ex2 n
   else
     -- let v1 = gensym

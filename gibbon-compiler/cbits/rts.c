@@ -31,7 +31,7 @@
 #define GB (MB * 1000lu)
 
 // Initial size of BigInfinite buffers
-static long long global_init_biginf_buf_size = (5 * GB);
+static long long global_init_biginf_buf_size = (512 * MB);
 
 // Initial size of Infinite buffers
 static long long global_init_inf_buf_size = 64 * KB;
