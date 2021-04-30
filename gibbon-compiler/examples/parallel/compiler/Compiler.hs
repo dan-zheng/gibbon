@@ -640,6 +640,21 @@ print_locals ls =
         _ = printsym (quote " ")
     in print_locals tl
 
+print_varenv :: List (Sym,Sym) -> ()
+print_varenv ls =
+  if is_empty_ll ls
+  then ()
+  else
+    let (a,b) = head_ll ls
+        tl = tail_ll ls
+        _ = printsym (quote "(")
+        _ = printsym a
+        _ = printsym (quote ",")
+        _ = printsym b
+        _ = printsym (quote ")")
+        _ = printsym (quote " ")
+    in print_varenv tl
+
 --------------------------------------------------------------------------------
 -- X86 with variables
 
@@ -1101,31 +1116,39 @@ uniqifyExpA var_env exp =
   case exp of
     SimplA simpl -> SimplA (uniqifySimplExpA var_env simpl)
     LetA v rhs bod ->
-      if contains_env var_env v
-      then
+      {-
+       - if contains_env var_env v
+       - then
+       -}
         let rhs' = uniqifySimplExpA var_env rhs
             v'   = gensym
             var_env' = insert_env var_env v v'
             bod' = uniqifyExpA var_env' bod
         in LetA v' rhs' bod'
-      else
-        let rhs' = uniqifySimplExpA var_env rhs
-            var_env' = insert_env var_env v v
-            bod' = uniqifyExpA var_env' bod
-        in LetA v rhs' bod'
+      {-
+       - else
+       -   let rhs' = uniqifySimplExpA var_env rhs
+       -       var_env' = insert_env var_env v v
+       -       bod' = uniqifyExpA var_env' bod
+       -   in LetA v rhs' bod'
+       -}
     LetA2 v rhs bod ->
-      if contains_env var_env v
-      then
+      {-
+       - if contains_env var_env v
+       - then
+       -}
         let rhs' = uniqifySimplExpA var_env rhs
             v'   = gensym
             var_env' = insert_env var_env v v'
             bod' = uniqifyExpA var_env' bod
         in LetA2 v' rhs' bod'
-      else
-        let rhs' = uniqifySimplExpA var_env rhs
-            var_env' = insert_env var_env v v
-            bod' = uniqifyExpA var_env' bod
-        in LetA2 v rhs' bod'
+      {-
+       - else
+       -   let rhs' = uniqifySimplExpA var_env rhs
+       -       var_env' = insert_env var_env v v
+       -       bod' = uniqifyExpA var_env' bod
+       -   in LetA2 v rhs' bod'
+       -}
     IfA a b c -> IfA (uniqifySimplExpA var_env a) (uniqifyExpA var_env b) (uniqifyExpA var_env c)
 
 uniqifyExpA_par :: VarEnv -> ExpA -> ExpA
@@ -1133,31 +1156,39 @@ uniqifyExpA_par var_env exp =
   case exp of
     SimplA simpl -> SimplA (uniqifySimplExpA var_env simpl)
     LetA v rhs bod ->
-      if contains_env var_env v
-      then
+      {-
+       - if contains_env var_env v
+       - then
+       -}
         let rhs' = uniqifySimplExpA var_env rhs
             v'   = gensym
             var_env' = insert_env var_env v v'
             bod' = uniqifyExpA_par var_env' bod
         in LetA v' rhs' bod'
-      else
-        let rhs' = uniqifySimplExpA var_env rhs
-            var_env' = insert_env var_env v v
-            bod' = uniqifyExpA_par var_env bod
-        in LetA v rhs' bod'
+      {-
+       - else
+       -   let rhs' = uniqifySimplExpA var_env rhs
+       -       var_env' = insert_env var_env v v
+       -       bod' = uniqifyExpA_par var_env' bod
+       -   in LetA v rhs' bod'
+       -}
     LetA2 v rhs bod ->
-      if contains_env var_env v
-      then
+      {-
+       - if contains_env var_env v
+       - then
+       -}
         let rhs' = uniqifySimplExpA var_env rhs
             v'   = gensym
             var_env' = insert_env var_env v v'
             bod' = uniqifyExpA var_env' bod
         in LetA2 v' rhs' bod'
-      else
-        let rhs' = uniqifySimplExpA var_env rhs
-            var_env' = insert_env var_env v v
-            bod' = uniqifyExpA var_env bod
-        in LetA2 v rhs' bod'
+      {-
+       - else
+       -   let rhs' = uniqifySimplExpA var_env rhs
+       -       var_env' = insert_env var_env v v
+       -       bod' = uniqifyExpA var_env' bod
+       -   in LetA2 v rhs' bod'
+       -}
     IfA a b c ->
       let a' = (uniqifySimplExpA var_env a)
           -- TODO:
@@ -1333,7 +1364,7 @@ explicateTail_par exp =
                     blks2 = BlockAppend blks0 blks1
 
                     tb = MkTailAndBlk tail' blks2
-                in (locals1, tb)
+                in (locals3, tb)
 
 
 explicateTail2 :: ExpA -> (List Sym, TailC)
@@ -1950,7 +1981,7 @@ assignHomesArgX86 :: HomesEnv -> ArgX86 -> ArgX86
 assignHomesArgX86 homes arg =
   case arg of
     IntX86 i -> IntX86 i
-    VarX86 v -> DerefX86 (quote "rbp") 1 -- (lookup_int_env homes v)
+    VarX86 v -> DerefX86 (quote "rbp") (lookup_int_env homes v)
     RegX86 r -> RegX86 r
     DerefX86 r o -> DerefX86 r o
 
@@ -2066,15 +2097,11 @@ small_ex = ProgramA intTy
 
 gibbon_main =
   let ex = make_big_ex sizeParam 0
-      -- _ = print_expa ex
+      {- _ = print_expa ex -}
       p = ProgramA intTy ex
-      -- _ = iterate (typecheckA p)
+      compiled = timeit (compile2 p)
+      -- _ = print_pseudox86 compiled
       -- _ = printsym (quote "\n")
-      -- _ = iterate (typecheckA_par p)
-      -- _ = iterate (uniqify p)
-      -- _ = printsym (quote "\n")
-      -- _ = iterate (uniqify_par p)
-      -- compiled = iterate (compile2 p)
-      -- -- _ = printsym (quote "\n")
-      compiled_par = iterate (compile2_par p)
+      compiled_par = timeit (compile2_par p)
+      -- _ = print_pseudox86 compiled_par
   in ()
